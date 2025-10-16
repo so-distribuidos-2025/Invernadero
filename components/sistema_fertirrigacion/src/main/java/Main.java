@@ -46,7 +46,7 @@ public class Main extends UnicastRemoteObject implements IClienteEM {
             int exclusionPort = (exclusionPortEnv != null) ? Integer.parseInt(exclusionPortEnv) : 10000;
 
             // ATENCIÓN: El nombre del servicio debe coincidir con el del Controlador: "ExclusionMutua"
-            IServicioExclusionMutua exclusion = (IServicioExclusionMutua) Naming.lookup("rmi://" + exclusionHost + ":" + exclusionPort + "/ExclusionMutua");
+            IServicioExclusionMutua exclusion = (IServicioExclusionMutua) Naming.lookup("rmi://" + exclusionHost + ":" + exclusionPort + "/servidorCentralEM");
             System.out.println("Conexión establecida con el servidor de Exclusión Mutua.");
 
             while (true) {
