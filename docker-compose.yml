@@ -1,0 +1,293 @@
+networks:
+  invernadero-net:
+    driver: bridge
+
+services:
+  # 1. MUTEX SERVER (Starts first)
+  server_mutex:
+    build: ./components/server_mutex
+    hostname: server_mutex
+    networks:
+      - invernadero-net
+    ports:
+      - "10000:10000" # RMI port for exclusion service
+      - "9000:9000"   # RMI port for fault detector
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 10000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. ELECTROVALVULAS (Start after Mutex Server)
+  # Master Valve (ID 5)
+  valvula-maestra:
+    build: ./components/electrovalvula
+    hostname: valvula-maestra
+    networks:
+      - invernadero-net
+    command: ["5"]
+    ports:
+      - "21005:21005"
+    depends_on:
+      server_mutex:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 21005 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Parcel Valves (ID 0-4)
+  valvula-0:
+    build: ./components/electrovalvula
+    hostname: valvula-0
+    networks:
+      - invernadero-net
+    command: ["0"]
+    depends_on:
+      server_mutex:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 21000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valvula-1:
+    build: ./components/electrovalvula
+    hostname: valvula-1
+    networks:
+      - invernadero-net
+    command: ["1"]
+    depends_on:
+      server_mutex:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 21001 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valvula-2:
+    build: ./components/electrovalvula
+    hostname: valvula-2
+    networks:
+      - invernadero-net
+    command: ["2"]
+    depends_on:
+      server_mutex:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 21002 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valvula-3:
+    build: ./components/electrovalvula
+    hostname: valvula-3
+    networks:
+      - invernadero-net
+    command: ["3"]
+    depends_on:
+      server_mutex:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 21003 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valvula-4:
+    build: ./components/electrovalvula
+    hostname: valvula-4
+    networks:
+      - invernadero-net
+    command: ["4"]
+    depends_on:
+      server_mutex:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 21004 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. CONTROLLER AND FERTIRRIGATION (Start after Valves)
+  controlador:
+    build: ./components/controlador
+    hostname: controlador
+    networks:
+      - invernadero-net
+    ports:
+      - "20000:20000" # TCP port for sensors
+    depends_on:
+      server_mutex:
+        condition: service_healthy
+      valvula-maestra:
+        condition: service_healthy
+      valvula-0:
+        condition: service_healthy
+      valvula-1:
+        condition: service_healthy
+      valvula-2:
+        condition: service_healthy
+      valvula-3:
+        condition: service_healthy
+      valvula-4:
+        condition: service_healthy
+    environment:
+      - CONTROLADOR_PORT=20000
+      - EXCLUSION_HOST=server_mutex
+      - EXCLUSION_PORT=10000
+      - VALVULA_MAESTRA_HOST=valvula-maestra
+      - VALVULA_MAESTRA_PORT=21005
+      - VALVULA_BASE_PORT=21000
+      # IMPORTANT: VALVULA_HOST is set in the code to construct hostnames like 'valvula-0'.
+      # The code uses 'String.format' on this env var, which is problematic.
+      # A code change is recommended. See explanation below.
+      - VALVULA_HOST=valvula-%d # This assumes code handles 'valvula-0', 'valvula-1' etc.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 20000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sistema_fertirrigacion:
+    build: ./components/sistema_fertirrigacion
+    networks:
+      - invernadero-net
+    depends_on:
+      server_mutex:
+        condition: service_healthy
+    environment:
+      - EXCLUSION_HOST=server_mutex
+      - EXCLUSION_PORT=10000
+
+  # 4. SENSORS AND TIMERS (Start after Controller)
+  sensor-temperatura:
+    build: ./components/sensores/temperatura
+    networks:
+      - invernadero-net
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  sensor-iluminacion:
+    build: ./components/sensores/iluminacion
+    networks:
+      - invernadero-net
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  sensor-lluvia:
+    build: ./components/sensores/lluvia
+    networks:
+      - invernadero-net
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  sensor-humedad-0:
+    build: ./components/sensores/humedad
+    networks:
+      - invernadero-net
+    command: ["0"]
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  sensor-humedad-1:
+    build: ./components/sensores/humedad
+    networks:
+      - invernadero-net
+    command: ["1"]
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  sensor-humedad-2:
+    build: ./components/sensores/humedad
+    networks:
+      - invernadero-net
+    command: ["2"]
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  sensor-humedad-3:
+    build: ./components/sensores/humedad
+    networks:
+      - invernadero-net
+    command: ["3"]
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  sensor-humedad-4:
+    build: ./components/sensores/humedad
+    networks:
+      - invernadero-net
+    command: ["4"]
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  temporizador-0:
+    build: ./components/temporizador
+    networks:
+      - invernadero-net
+    command: ["0"]
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  temporizador-1:
+    build: ./components/temporizador
+    networks:
+      - invernadero-net
+    command: ["1"]
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  temporizador-2:
+    build: ./components/temporizador
+    networks:
+      - invernadero-net
+    command: ["2"]
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  temporizador-3:
+    build: ./components/temporizador
+    networks:
+      - invernadero-net
+    command: ["3"]
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  temporizador-4:
+    build: ./components/temporizador
+    networks:
+      - invernadero-net
+    command: ["4"]
+    depends_on:
+      controlador:
+        condition: service_healthy
+
+  # Optional: Console for debugging
+  # consola:
+  #   build: ./components/sensores/consola
+  #   networks:
+  #     - invernadero-net
+  #   tty: true # Equivalent to -it for interactive session
+  #   stdin_open: true
+  #   depends_on:
+  #     - controlador # And potentially sensor RMI servers
+  #   environment:
+  #     - SENSOR_RMI_HOST=controlador # This is an assumption
+  #     - SENSOR_RMI_PORT=22000
