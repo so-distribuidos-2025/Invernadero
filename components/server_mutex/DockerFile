@@ -1,8 +1,9 @@
 FROM c4lvarez7/java-cont-sod2025
 
 ENV HOSTNAME="localhost"
-ENV VALVULA_BASE_PORT="21000"
+ENV DETECTOR_FALLOS_PORT="9000"
+ENV EXCLUSION_PORT="10000"
 
-COPY electrovalvula.jar app.jar
+COPY serverMutex.jar app.jar
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

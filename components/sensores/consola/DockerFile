@@ -1,0 +1,8 @@
+FROM c4lvarez7/java-cont-sod2025
+
+ENV SENSOR_RMI_HOST="localhost"
+ENV SENSOR_RMI_PORT="22000"
+
+COPY consola.jar app.jar
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
