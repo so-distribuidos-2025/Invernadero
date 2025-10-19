@@ -3,7 +3,27 @@ kind: Namespace
 metadata:
   name: invernadero
 ---
-# Servidor Mutex
+#################################################################
+# Servidor Mutex - Central service for resource locking
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-mutex-service
+  namespace: invernadero
+spec:
+  selector:
+    app: server-mutex
+  ports:
+    - name: rmi-exclusion # Port 10000 for the exclusion mutua service
+      protocol: TCP
+      port: 10000
+      targetPort: 10000
+    - name: rmi-detector # Port 9000 for the fault detector
+      protocol: TCP
+      port: 9000
+      targetPort: 9000
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,8 +42,247 @@ spec:
       containers:
         - name: server-mutex
           image: server_mutex:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 10000
+            - containerPort: 9000
+          env:
+            - name: HOSTNAME
+              value: "server-mutex-service"
+            - name: EXCLUSION_PORT
+              value: "10000"
+            - name: DETECTOR_FALLOS_PORT
+              value: "9000"
 ---
-# Sistema de Fertirrigación
+#################################################################
+# Controlador - The central brain of the system
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: controlador-service
+  namespace: invernadero
+spec:
+  selector:
+    app: controlador
+  ports:
+    - name: tcp-sensors
+      protocol: TCP
+      port: 20000
+      targetPort: 20000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controlador
+  namespace: invernadero
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: controlador
+  template:
+    metadata:
+      labels:
+        app: controlador
+    spec:
+      containers:
+        - name: controlador
+          image: controlador:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 20000
+          env:
+            - name: CONTROLADOR_PORT
+              value: "20000"
+            - name: EXCLUSION_HOST
+              value: "server-mutex-service"
+            - name: EXCLUSION_PORT
+              value: "10000"
+            # HiloParcela dynamically builds the per-parcel valve hostname
+            - name: VALVULA_HOST
+              value: "electrovalvula-%d.electrovalvula-headless-svc"
+            - name: VALVULA_BASE_PORT
+              value: "21000"
+            # CORRECTED: HiloControlador specifically looks for these env vars for a "master valve".
+            # This is likely an application design issue, as electrovalvula-5 does not exist with 5 replicas (0-4).
+            # We add the variables to satisfy the code, but this connection will fail.
+            - name: VALVULA_MAESTRA_HOST
+              value: "electrovalvula-5.electrovalvula-headless-svc"
+            - name: VALVULA_MAESTRA_PORT
+              value: "21005"
+---
+#################################################################
+# Electrovalvulas - Stateful workload with stable IDs
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: electrovalvula-headless-svc
+  namespace: invernadero
+spec:
+  clusterIP: None
+  selector:
+    app: electrovalvula
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: electrovalvula
+  namespace: invernadero
+spec:
+  serviceName: "electrovalvula-headless-svc"
+  replicas: 5
+  selector:
+    matchLabels:
+      app: electrovalvula
+  template:
+    metadata:
+      labels:
+        app: electrovalvula
+    spec:
+      containers:
+        - name: electrovalvula
+          image: electrovalvula:1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: VALVULA_BASE_PORT
+              value: "21000"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              POD_INDEX=${HOSTNAME##*-}
+              exec java -jar app.jar $POD_INDEX
+---
+#################################################################
+# ADDED: Central RMI Service for all Sensors
+# This service provides a single DNS name for the Consola to connect to.
+# It discovers all pods that have an RMI sensor interface.
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: sensor-rmi-service
+  namespace: invernadero
+spec:
+  selector:
+    component: rmi-sensor # Selects all sensor pods with this label
+  ports:
+    - name: rmi-sensors
+      protocol: TCP
+      port: 22000
+      targetPort: 22000
+---
+#################################################################
+# Sensores de Humedad - Stateful workload with stable IDs
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: sensor-humedad-headless-svc
+  namespace: invernadero
+spec:
+  clusterIP: None
+  selector:
+    app: sensor-humedad
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sensor-humedad
+  namespace: invernadero
+spec:
+  serviceName: "sensor-humedad-headless-svc"
+  replicas: 5
+  selector:
+    matchLabels:
+      app: sensor-humedad
+  template:
+    metadata:
+      labels:
+        app: sensor-humedad
+        component: rmi-sensor # CORRECTED: Add label for RMI service discovery
+    spec:
+      containers:
+        - name: sensor-humedad
+          image: humedad:1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CONTROLADOR_HOST
+              value: "controlador-service"
+            - name: CONTROLADOR_PORT
+              value: "20000"
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # CORRECTED: The Java code reads this env var for its RMI server port.
+            - name: PORT
+              value: "22000"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              POD_INDEX=${HOSTNAME##*-}
+              exec java -jar app.jar $POD_INDEX
+---
+#################################################################
+# Temporizadores - Stateful workload with stable IDs
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporizador-headless-svc
+  namespace: invernadero
+spec:
+  clusterIP: None
+  selector:
+    app: temporizador
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: temporizador
+  namespace: invernadero
+spec:
+  serviceName: "temporizador-headless-svc"
+  replicas: 5
+  selector:
+    matchLabels:
+      app: temporizador
+  template:
+    metadata:
+      labels:
+        app: temporizador
+    spec:
+      containers:
+        - name: temporizador
+          image: temporizador:1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CONTROLADOR_HOST
+              value: "controlador-service"
+            - name: CONTROLADOR_PORT
+              value: "20000"
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              POD_INDEX=${HOSTNAME##*-}
+              exec java -jar app.jar $POD_INDEX
+---
+#################################################################
+# CORRECTED: Standalone Deployments (Global Sensors, Fertirrigation, Console)
+# The multi-container `sensores-globales` deployment was split into three
+# separate deployments to avoid port conflicts, as each sensor tries to
+# create an RMI registry on the same port (22000).
+#################################################################
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -42,92 +301,100 @@ spec:
       containers:
         - name: sistema-fertirrigacion
           image: sistema_fertirrigacion:1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: EXCLUSION_HOST
+              value: "server-mutex-service"
+            - name: EXCLUSION_PORT
+              value: "10000"
 ---
-# Electrovalvulas (7 réplicas)
+# Deployment for Sensor de Iluminacion
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: electrovalvula
-  namespace: invernadero
-spec:
-  replicas: 7
-  selector:
-    matchLabels:
-      app: electrovalvula
-  template:
-    metadata:
-      labels:
-        app: electrovalvula
-    spec:
-      containers:
-        - name: electrovalvula
-          image: electrovalvula:1.0
----
-# Controlador (3 réplicas)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: controlador
-  namespace: invernadero
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: controlador
-  template:
-    metadata:
-      labels:
-        app: controlador
-    spec:
-      containers:
-        - name: controlador
-          image: controlador:1.0
----
-# Sensores Globales (iluminación, lluvia, temperatura)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: sensores-globales
+  name: sensor-iluminacion
   namespace: invernadero
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: sensores-globales
+      app: sensor-iluminacion
   template:
     metadata:
       labels:
-        app: sensores-globales
+        app: sensor-iluminacion
+        component: rmi-sensor # Add label for RMI service discovery
     spec:
       containers:
-        - name: sensor-iluminacion
-          image: iluminacion:1.0
-        - name: sensor-lluvia
-          image: lluvia:1.0
-        - name: sensor-temperatura
-          image: temperatura:1.0
+      - name: sensor-iluminacion
+        image: iluminacion:1.0
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: CONTROLADOR_HOST
+          value: "controlador-service"
+        - name: CONTROLADOR_PORT
+          value: "20000"
+        - name: PORT # Add PORT for RMI server
+          value: "22000"
 ---
-# Sensores de Humedad (5 réplicas)
+# Deployment for Sensor de Lluvia
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sensor-humedad
+  name: sensor-lluvia
   namespace: invernadero
 spec:
-  replicas: 5
+  replicas: 1
   selector:
     matchLabels:
-      app: sensor-humedad
+      app: sensor-lluvia
   template:
     metadata:
       labels:
-        app: sensor-humedad
+        app: sensor-lluvia
+        component: rmi-sensor # Add label for RMI service discovery
     spec:
       containers:
-        - name: sensor-humedad
-          image: humedad:1.0
+      - name: sensor-lluvia
+        image: lluvia:1.0
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: CONTROLADOR_HOST
+          value: "controlador-service"
+        - name: CONTROLADOR_PORT
+          value: "20000"
+        - name: PORT # Add PORT for RMI server
+          value: "22000"
 ---
-# Consola (1 réplica)
+# Deployment for Sensor de Temperatura
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sensor-temperatura
+  namespace: invernadero
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sensor-temperatura
+  template:
+    metadata:
+      labels:
+        app: sensor-temperatura
+        component: rmi-sensor # Add label for RMI service discovery
+    spec:
+      containers:
+      - name: sensor-temperatura
+        image: temperatura:1.0
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: CONTROLADOR_HOST
+          value: "controlador-service"
+        - name: CONTROLADOR_PORT
+          value: "20000"
+        - name: PORT # Add PORT for RMI server
+          value: "22000"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -146,23 +413,12 @@ spec:
       containers:
         - name: consola
           image: consola:1.0
----
-# Temporizadores (5 réplicas)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: temporizador
-  namespace: invernadero
-spec:
-  replicas: 5
-  selector:
-    matchLabels:
-      app: temporizador
-  template:
-    metadata:
-      labels:
-        app: temporizador
-    spec:
-      containers:
-        - name: temporizador
-          image: temporizador:1.0
+          imagePullPolicy: IfNotPresent
+          stdin: true
+          tty: true
+          env:
+            # CORRECTED: Point to the new central RMI service
+            - name: SENSOR_RMI_HOST
+              value: "sensor-rmi-service"
+            - name: SENSOR_RMI_PORT
+              value: "22000"

@@ -1,7 +1,8 @@
+import rmi.ISensorRMI;
+
 import java.io.PrintWriter;
 import java.net.Socket;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.rmi.RemoteException;
 
 /**
  * Clase HiloSensado
@@ -16,7 +17,7 @@ import java.time.format.DateTimeFormatter;
  *  - Envía periódicamente los valores al servidor usando PrintWriter.
  *  - Permite encender y apagar el sensor.
  */
-public class HiloSensado extends Thread {
+public class HiloSensado extends Thread implements ISensorRMI {
     
     // Indica si el sensor está encendido o apagado
     private boolean on;
@@ -29,6 +30,10 @@ public class HiloSensado extends Thread {
 
     // Flujo de salida para enviar los valores de temperatura
     private PrintWriter pw;
+
+    // Bandera para saber si el sensor esta en modo manual o automatico
+    private boolean isAuto = true;
+
 
     /**
      * Constructor de la clase HiloSensado.
@@ -94,9 +99,11 @@ public class HiloSensado extends Thread {
     @Override
     public void run() {
         while (on) {
-            generarTemperatura();              // Genera un nuevo valor
+            if (isAuto) {
+            generarTemperatura();           // Genera un nuevo valor si esta en automatico
+            }
             pw.println(this.temperatura);      // Envía al servidor
-            System.out.println(getTiempo() + " | Valor medido: " + temperatura);   // Muestra en consola
+            System.out.println(temperatura);   // Muestra en consola
 
             try {
                 Thread.sleep(1000); // Pausa de 1 segundo
@@ -106,9 +113,13 @@ public class HiloSensado extends Thread {
         }
     }
 
-    private String getTiempo(){
-        LocalDateTime myDateObj = LocalDateTime.now();
-        DateTimeFormatter myFormatObj = DateTimeFormatter.ofPattern("HH:mm:ss");
-        return myDateObj.format(myFormatObj);
+    @Override
+    public void setValor(double valor) throws RemoteException {
+        this.temperatura = valor;
+    }
+
+    @Override
+    public void setAuto(boolean auto) throws RemoteException {
+        this.isAuto = auto;
     }
 }
