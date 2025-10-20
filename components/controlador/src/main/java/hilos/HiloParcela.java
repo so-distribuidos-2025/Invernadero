@@ -1,4 +1,5 @@
 package hilos;
+
 import rmi.IServerRMI;
 import util.INR;
 
@@ -96,24 +97,7 @@ public class HiloParcela extends Thread {
      * @param id     el identificador único de la parcela (de 0 a 4).
      * @param estado el mapa compartido con el estado global del sistema.
      */
-    public HiloParcela(int id,
-                       ConcurrentHashMap estado) {
-        try {
-            String valvulaHost = System.getenv("VALVULA_HOST");
-            if (valvulaHost == null) {
-                valvulaHost = "localhost";
-            } else {
-                valvulaHost = String.format(valvulaHost, id);
-            }
-            String basePortEnv = System.getenv("VALVULA_BASE_PORT");
-            int basePort = (basePortEnv != null) ? Integer.parseInt(basePortEnv) : 21000;
-            int puerto = basePort + id;
-            String direccionRMI = String.format("rmi://" + valvulaHost + ":%d/ServerRMI", puerto);
-            this.electrovalvula = (IServerRMI) Naming.lookup(direccionRMI);
-            System.out.println("Conectado a la electrovalvula" + id);
-        } catch (NotBoundException | MalformedURLException | RemoteException e) {
-            System.err.println("Fallo al conectar la electrovalvula " + id + ": " + e.getMessage());
-        }
+    public HiloParcela(int id, ConcurrentHashMap estado) {
         this.id = id;
         this.humedad = 0;
         this.estado = estado;
@@ -121,6 +105,42 @@ public class HiloParcela extends Thread {
         this.lluvia = (Boolean) estado.get("lluvia");
         this.temperatura = (Double) estado.get("temperatura");
         this.inr = 0;
+
+        int maxRetries = 10;
+        long delay = 1000;
+
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                String valvulaHost = System.getenv("VALVULA_HOST");
+                if (valvulaHost == null) {
+                    valvulaHost = "localhost";
+                } else {
+                    valvulaHost = String.format(valvulaHost, id);
+                }
+                String basePortEnv = System.getenv("VALVULA_BASE_PORT");
+                int basePort = (basePortEnv != null) ? Integer.parseInt(basePortEnv) : 21000;
+                int puerto = basePort + id;
+                String direccionRMI = String.format("rmi://" + valvulaHost + ":%d/ServerRMI", puerto);
+
+                System.out.println("Intento " + (i + 1) + ": Conectandose a electrovalvula " + id + " en " + direccionRMI);
+                this.electrovalvula = (IServerRMI) Naming.lookup(direccionRMI);
+                System.out.println("Conectado a electrovalvula " + id);
+                break; // Success, exit loop
+            } catch (NotBoundException | MalformedURLException | RemoteException e) {
+                System.err.println("Error al conectarse a electrovalvula " + id + ": " + e.getMessage());
+                if (i < maxRetries - 1) {
+                    try {
+                        System.err.println("Reintentando en " + delay / 1000 + " segundos...");
+                        Thread.sleep(delay);
+                        delay *= 2; // Exponential backoff
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                } else {
+                    System.err.println("Could not connect to electrovalvula " + id + " after " + maxRetries + " attempts. HiloParcela will not function correctly.");
+                }
+            }
+        }
     }
 
 

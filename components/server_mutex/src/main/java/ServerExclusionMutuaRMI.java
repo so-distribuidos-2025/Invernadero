@@ -41,7 +41,7 @@ public class ServerExclusionMutuaRMI extends UnicastRemoteObject implements ISer
 
         if (recurso.token) {
             recurso.token = false;
-            System.out.println("Token entregado a cliente para recurso: " + nombreRecurso);
+            System.out.println("Token entregado a cliente" + cliente.toString() + " para recurso: " + nombreRecurso);
             cliente.RecibirToken();
         } else {
             System.out.println("Recurso ocupado, cliente en espera: " + nombreRecurso);

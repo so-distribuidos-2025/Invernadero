@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.io.IOException;
+
 /**
  * <p>
  * Clase {@code HiloControlador} que representa el hilo principal de control del
@@ -100,53 +101,56 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
     public HiloControlador(ConcurrentHashMap<String, Object> estado) throws RemoteException {
         super();
         this.estado = estado;
-        this.temperatura = 0.0;
-        this.radiacion = 0.0;
-        this.lluvia = false;
 
-        // Inicialización de estado global
-        this.estado.put("temperatura", temperatura);
-        this.estado.put("radiacion", radiacion);
-        this.estado.put("lluvia", lluvia);
-
-        // Inicializar 5 parcelas y lanzar sus hilos
         for (int i = 0; i < 5; i++) {
             HiloParcela parcela = new HiloParcela(i, estado);
             listaParcelas.add(parcela);
             parcela.start();
         }
 
-        try {
-            String exclusionHost = System.getenv("EXCLUSION_HOST");
-            if (exclusionHost == null) {
-                exclusionHost = "localhost";
+        int maxRetries = 10;
+        long delay = 1000;
+
+        IServicioExclusionMutua tempExclusionService = null;
+        IServerRMI tempValvulaMaestraParcelas = null;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                String valvulaHost = System.getenv("VALVULA_MAESTRA_HOST");
+                if (valvulaHost == null) valvulaHost = "localhost";
+
+                String valvulaEnv = System.getenv("VALVULA_MAESTRA_PORT");
+                int valvulaPort = (valvulaEnv != null) ? Integer.parseInt(valvulaEnv) : 21005;
+
+                tempValvulaMaestraParcelas = (IServerRMI) Naming.lookup("rmi://" + valvulaHost + ":" + valvulaPort + "/ServerRMI");
+                System.out.println("Controlador conectado a la Válvula Maestra de Parcelas.");
+
+                String exclusionHost = System.getenv("EXCLUSION_HOST");
+                if (exclusionHost == null) exclusionHost = "localhost";
+
+                String portEnv = System.getenv("EXCLUSION_PORT");
+                int port = (portEnv != null) ? Integer.parseInt(portEnv) : 10000;
+                String url = "rmi://" + exclusionHost + ":" + port + "/servidorCentralEM";
+
+                System.out.println("Intento " + (i + 1) + ": Conectandose al servidor mutex en " + url);
+                tempExclusionService = (IServicioExclusionMutua) Naming.lookup(url);
+                System.out.println("Controlador conectado al servicio de Exclusión Mutua.");
+                break;
+            } catch (NotBoundException | MalformedURLException | RemoteException e) {
+                System.err.println("Error conectadose al servicio de Exclusion Mutua: " + e.getMessage());
+                if (i < maxRetries - 1) {
+                    try {
+                        Thread.sleep(delay);
+                        delay *= 2;
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                } else {
+                    throw new RuntimeException("Could not connect to Exclusion Mutua service after " + maxRetries + " attempts.", e);
+                }
             }
-
-            String portEnv = System.getenv("EXCLUSION_PORT");
-            int port = (portEnv != null) ? Integer.parseInt(portEnv) : 10000;
-            System.out.println("rmi://"+exclusionHost+":"+port+"/servidorCentralEM");
-
-            // Conexión con el servicio de exclusión mutua (token por recurso)
-            this.exclusionService = (IServicioExclusionMutua) Naming.lookup("rmi://"+exclusionHost+":"+port+"/servidorCentralEM");
-            System.out.println("Controlador conectado al servicio de Exclusión Mutua.");
-
-            String valvulaHost = System.getenv("VALVULA_MAESTRA_HOST");
-            if (valvulaHost == null) {
-                valvulaHost = "localhost";
-            }
-            String valvulaEnv = System.getenv("VALVULA_MAESTRA_PORT");
-            int valvulaPort = (valvulaEnv != null) ? Integer.parseInt(valvulaEnv) : 21005;
-
-            // Conexión con la válvula maestra de parcelas
-            this.valvulaMaestraParcelas = (IServerRMI) Naming.lookup("rmi://"+valvulaHost+":"+valvulaPort+"/ServerRMI");
-            System.out.println("Controlador conectado a la Válvula Maestra de Parcelas.");
-
-        } catch (NotBoundException e) {
-            System.err.println("Error crítico al conectar con servicios RMI: " + e.getMessage());
-            throw new RuntimeException(e);
-        } catch (MalformedURLException e) {
-            throw new RuntimeException(e);
         }
+        this.valvulaMaestraParcelas = tempValvulaMaestraParcelas;
+        this.exclusionService = tempExclusionService;
     }
 
     /**
@@ -189,11 +193,13 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
                 if (demandaActual && !tieneAccesoBomba) {
                     // Solicitar acceso exclusivo al recurso
                     exclusionService.ObtenerRecurso(RECURSO_BOMBA, this);
+                    System.out.println("Token pedido");
                 } else if (!demandaActual && tieneAccesoBomba) {
                     // Liberar recurso cuando ya no hay demanda
                     valvulaMaestraParcelas.cerrarValvula();
                     exclusionService.DevolverRecurso(RECURSO_BOMBA);
                     tieneAccesoBomba = false;
+                    System.out.println("Token devuelto");
                 }
 
                 // Actualizar estado global

@@ -77,6 +77,7 @@ public class Main {
 
                 // Publica el servidor remoto en el registro
                 Naming.rebind("rmi://" + sensorHostname + ":" + sensorPort + "/" + name, hiloServerRMI);
+                System.out.println("rmi://" + sensorHostname + ":" + sensorPort + "/" + name + " bound in registry");
 
             } catch (RemoteException ex) {
                 Logger.getLogger(HiloServerRMI.class.getName()).log(Level.SEVERE,

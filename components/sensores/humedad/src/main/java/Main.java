@@ -68,7 +68,7 @@ public class Main {
             }
 
             Naming.rebind("rmi://" + sensorHostname + ":" + port + "/" + name, hiloServerRMI);
-            System.out.println(name + " bound in registry");
+            System.out.println("rmi://" + sensorHostname + ":" + port + "/" + name + " bound in registry");
 
         } catch (UnknownHostException e) {
             throw new RuntimeException("No se pudo resolver el host del servidor", e);

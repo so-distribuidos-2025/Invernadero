@@ -1,4 +1,5 @@
 import rmi.ISensorRMI;
+
 import java.net.MalformedURLException;
 import java.rmi.Naming;
 import java.rmi.NotBoundException;
@@ -17,11 +18,21 @@ import java.util.Scanner;
  */
 public class Consola {
 
-    private final Scanner sc;
-    private final ISensorRMI sensorTemperatura;
-    private final Map<Integer, ISensorRMI> sensoresHumedad = new HashMap<>();
-    private final ISensorRMI sensorRadiacion;
-    private final ISensorRMI sensorLluvia;
+    private Scanner sc;
+    private ISensorRMI sensorTemperatura;
+    private Map<Integer, ISensorRMI> sensoresHumedad = new HashMap<>();
+    private ISensorRMI sensorRadiacion;
+    private ISensorRMI sensorLluvia;
+
+    // --- NUEVO: Constantes para la lógica de reintentos de conexión ---
+    /**
+     * Número máximo de intentos para conectar con un sensor.
+     */
+    private static final int MAX_INTENTOS_CONEXION = 10;
+    /**
+     * Tiempo de espera en milisegundos entre cada intento de conexión.
+     */
+    private static final int ESPERA_ENTRE_INTENTOS_MS = 5000; // 5 segundos
 
     // Puerto RMI centralizado para todos los servicios.
     private static final int RMI_PORT = 22000;
@@ -34,22 +45,33 @@ public class Consola {
     public Consola() {
         sc = new Scanner(System.in);
         System.out.println("--- SOD 2025 Consola depuracion ---");
-        System.out.println("Conectando a los sensores RMI en el puerto " + RMI_PORT + "...");
+        System.out.println("Iniciando conexión a los sensores RMI...");
 
-        // Todos los sensores se conectan al mismo puerto pero con nombres de servicio diferentes.
-        sensorTemperatura = conexionRMI("SensorTemperaturaRMI");
+        // Conectar al sensor de Temperatura
+        String sensorRmiHost = System.getenv("SENSOR_RMI_TEMPERATURA_HOST");
+        if (sensorRmiHost == null) sensorRmiHost = "localhost";
+        sensorTemperatura = conexionRMI(sensorRmiHost, "SensorTemperaturaRMI");
 
         // Conectar a los 5 sensores de humedad (IDs 0 a 4)
         for (int i = 0; i < 5; i++) {
+            sensorRmiHost = System.getenv("SENSOR_RMI_HUMEDAD" + i + "_HOST");
+            if (sensorRmiHost == null) sensorRmiHost = "localhost";
             String serviceName = "SensorHumedadRMI" + i;
-            ISensorRMI sensor = conexionRMI(serviceName);
+            ISensorRMI sensor = conexionRMI(sensorRmiHost, serviceName);
             if (sensor != null) {
                 sensoresHumedad.put(i, sensor);
             }
         }
 
-        sensorRadiacion   = conexionRMI("SensorRadiacionRMI");
-        sensorLluvia      = conexionRMI("SensorLluviaRMI");
+        // Conectar al sensor de Radiación
+        sensorRmiHost = System.getenv("SENSOR_RMI_RADIACION_HOST");
+        if (sensorRmiHost == null) sensorRmiHost = "localhost";
+        sensorRadiacion = conexionRMI(sensorRmiHost, "SensorRadiacionRMI");
+
+        // Conectar al sensor de Lluvia
+        sensorRmiHost = System.getenv("SENSOR_RMI_LLUVIA_HOST");
+        if (sensorRmiHost == null) sensorRmiHost = "localhost";
+        sensorLluvia = conexionRMI(sensorRmiHost, "SensorLluviaRMI");
 
         System.out.println("\n--- Lista para recibir comandos. Escriba 'help' para ayuda. ---");
 
@@ -73,22 +95,49 @@ public class Consola {
      * @param serviceName El nombre con el que el servicio RMI fue publicado en el registro.
      * @return Una instancia del stub {@link ISensorRMI} si la conexión es exitosa, o {@code null} si falla.
      */
-    public ISensorRMI conexionRMI(String serviceName) {
-        try {
-            String sensorRmiHost = System.getenv("SENSOR_RMI_HOST");
-            if (sensorRmiHost == null) sensorRmiHost = "localhost";
+    /**
+     * --- MÉTODO MODIFICADO CON LÓGICA DE REINTENTOS ---
+     * Intenta establecer una conexión RMI con un sensor, realizando varios intentos si falla.
+     *
+     * @param hostname    El host donde se encuentra el registro RMI del sensor.
+     * @param serviceName El nombre con el que el servicio RMI fue publicado.
+     * @return Una instancia del stub {@link ISensorRMI} si la conexión es exitosa, o {@code null} si falla tras todos los intentos.
+     */
+    public ISensorRMI conexionRMI(String hostname, String serviceName) {
+        // Obtenemos el puerto una sola vez fuera del bucle
+        String sensorRmiPortEnv = System.getenv("SENSOR_RMI_PORT");
+        int rmiPort = (sensorRmiPortEnv != null) ? Integer.parseInt(sensorRmiPortEnv) : 22000;
+        String direccionRMI = String.format("rmi://%s:%d/%s", hostname, rmiPort, serviceName);
 
-            String sensorRmiPortEnv = System.getenv("SENSOR_RMI_PORT");
-            int rmiPort = (sensorRmiPortEnv != null) ? Integer.parseInt(sensorRmiPortEnv) : 22000;
-
-            String direccionRMI = String.format("rmi://%s:%d/%s", sensorRmiHost, rmiPort, serviceName);
-            ISensorRMI sensor = (ISensorRMI) Naming.lookup(direccionRMI);
-            System.out.println("  [OK] Conectado a " + serviceName);
-            return sensor;
-        } catch (NotBoundException | MalformedURLException | RemoteException e) {
-            System.err.println("  [ERROR] Fallo al conectar a " + serviceName + ": " + e.getMessage());
-            return null;
+        for (int intento = 1; intento <= MAX_INTENTOS_CONEXION; intento++) {
+            try {
+                System.out.println("Intentando conectar con '" + serviceName + "' en '" + direccionRMI + "' (Intento " + intento + "/" + MAX_INTENTOS_CONEXION + ")...");
+                ISensorRMI sensor = (ISensorRMI) Naming.lookup(direccionRMI);
+                System.out.println("  [OK] Conectado a " + serviceName);
+                return sensor; // Éxito: retornamos el objeto y salimos del método.
+            } catch (NotBoundException | RemoteException e) {
+                System.err.println("  [ERROR] Fallo en el intento " + intento + " para conectar a '" + serviceName + "': " + e.getMessage());
+                if (intento < MAX_INTENTOS_CONEXION) {
+                    try {
+                        System.out.println("  Reintentando en " + (ESPERA_ENTRE_INTENTOS_MS / 1000) + " segundos...");
+                        Thread.sleep(ESPERA_ENTRE_INTENTOS_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt(); // Restaurar el estado de interrupción
+                        System.err.println("  La espera entre intentos fue interrumpida. Abortando conexión a " + serviceName);
+                        return null;
+                    }
+                }
+            } catch (MalformedURLException e) {
+                // Este error es por una URL mal formada (ej. mal hostname). No tiene sentido reintentar.
+                System.err.println("  [ERROR CRÍTICO] La dirección RMI '" + direccionRMI + "' está mal formada. Abortando conexión a " + serviceName);
+                e.printStackTrace();
+                return null; // Salimos inmediatamente
+            }
         }
+
+        // Si el bucle termina, significa que todos los intentos fallaron.
+        System.err.println("[FALLO TOTAL] No se pudo conectar a '" + serviceName + "' después de " + MAX_INTENTOS_CONEXION + " intentos.");
+        return null;
     }
 
     /**
@@ -198,9 +247,9 @@ public class Consola {
     /**
      * Gestiona los comandos para sensores genéricos (temperatura, radiación).
      *
-     * @param sensor La instancia del sensor RMI a controlar.
+     * @param sensor     La instancia del sensor RMI a controlar.
      * @param sensorName El nombre del sensor para los mensajes de log.
-     * @param args Los argumentos del comando.
+     * @param args       Los argumentos del comando.
      */
     private void handleSensorCommand(ISensorRMI sensor, String sensorName, String[] args) {
         if (sensor == null) {
@@ -255,7 +304,7 @@ public class Consola {
      * Gestiona los comandos específicos para el sensor de lluvia, que solo acepta valores 0 o 1.
      *
      * @param sensor La instancia del sensor de lluvia RMI.
-     * @param args Los argumentos del comando.
+     * @param args   Los argumentos del comando.
      */
     private void handleLluviaCommand(ISensorRMI sensor, String[] args) {
         if (sensor == null) {

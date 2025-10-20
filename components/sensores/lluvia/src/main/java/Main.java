@@ -87,7 +87,7 @@ public class Main {
             }
 
             Naming.rebind("rmi://" + sensorHostname + ":" + sensorPort + "/" + name, hiloServerRMI);
-            System.out.println(name + " bound in registry");
+            System.out.println("rmi://" + sensorHostname + ":" + sensorPort + "/" + name + " bound in registry");
 
         } catch (IOException ex) {
             Logger.getLogger(Main.class.getName()).log(Level.SEVERE, null, ex);

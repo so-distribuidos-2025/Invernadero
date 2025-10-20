@@ -15,7 +15,7 @@ public class HiloSensado extends Thread {
     /** Flujo de salida para enviar datos al servidor */
     private PrintWriter pw;
 
-    private boolean isAuto;
+    private boolean isAuto = true;
 
     /**
      * Constructor principal del sensor de humedad.
@@ -28,6 +28,7 @@ public class HiloSensado extends Thread {
         this.humedad = 0;
         this.cnxServidor = s;
         this.pw = pw;
+        this.isAuto = true;
     }
 
     /**
