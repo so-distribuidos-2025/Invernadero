@@ -1,7 +1,5 @@
 import java.io.PrintWriter;
 import java.net.Socket;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 
 /**
  * La clase {@code HiloSensado} simula el funcionamiento de un sensor de lluvia.
@@ -32,6 +30,8 @@ public class HiloSensado extends Thread {
     private Socket cnxServidor;
     /** Flujo de salida para enviar datos al servidor. */
     PrintWriter pw;
+
+    boolean isAuto = false;
 
     /**
      * Crea un nuevo hilo de sensado para el sensor de lluvia.
@@ -87,6 +87,15 @@ public class HiloSensado extends Thread {
         on = false;
     }
 
+
+    public void setValor(double valor) {
+        this.lluvia = valor;
+    }
+
+    public void setAuto(boolean auto) {
+        this.isAuto = auto;
+    }
+
     /**
      * Método principal del hilo.
      *
@@ -100,19 +109,14 @@ public class HiloSensado extends Thread {
         while (on) {
             generarLluvia();
             pw.println(this.lluvia);
-            System.out.println(getTiempo() + " | Lluvia: " + this.lluvia);
+            System.out.println("L=" + this.lluvia);
 
             try {
-                Thread.sleep(10000);
+                Thread.sleep(1000);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
         }
-    }
-    private String getTiempo(){
-        LocalDateTime myDateObj = LocalDateTime.now();
-        DateTimeFormatter myFormatObj = DateTimeFormatter.ofPattern("HH:mm:ss");
-        return myDateObj.format(myFormatObj);
     }
 }
 

@@ -81,6 +81,7 @@ public class HiloServerRMI extends Thread {
                 hostname = "localhost";
             }
             Naming.rebind(String.format("rmi://%s:%d/ServerRMI", hostname, port), server);
+            System.out.println("Inicado RMI en: " + String.format("rmi://%s:%d/ServerRMI", hostname, port));
 
         } catch (RemoteException ex) {
             Logger.getLogger(HiloServerRMI.class.getName()).log(Level.SEVERE, 

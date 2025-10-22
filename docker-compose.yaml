@@ -1,0 +1,325 @@
+version: '3.8'
+
+networks:
+  invernadero-net:
+    driver: bridge
+
+services:
+  # 1. Server de Exclusión Mutua (Mutex)
+  server-mutex:
+    image: server_mutex:1.0
+    container_name: server-mutex
+    networks:
+      - invernadero-net
+    ports:
+      - "10000:10000"
+    environment:
+      - EXCLUSION_PORT=10000
+      - HOSTNAME=server-mutex
+
+  # 2. Sistema de Fertirrigación
+  sistema-fertirrigacion:
+    image: sistema_fertirrigacion:1.0
+    container_name: sistema-fertirrigacion
+    networks:
+      - invernadero-net
+    depends_on:
+      - server-mutex
+    environment:
+      - EXCLUSION_HOST=server-mutex
+      - EXCLUSION_PORT=10000
+
+  # 3. Controlador Central
+  controlador:
+    image: controlador:1.0
+    container_name: controlador
+    networks:
+      - invernadero-net
+    ports:
+      - "20000:20000"
+    depends_on:
+      - server-mutex
+      - electrovalvula-0
+      - electrovalvula-1
+      - electrovalvula-2
+      - electrovalvula-3
+      - electrovalvula-4
+      - electrovalvula-5
+    environment:
+      - CONTROLADOR_PORT=20000
+      - EXCLUSION_HOST=server-mutex
+      - EXCLUSION_PORT=10000
+      - VALVULA_MAESTRA_HOST=electrovalvula-5
+      - VALVULA_MAESTRA_PORT=21005
+      - VALVULA_HOST=electrovalvula-%d
+      - VALVULA_BASE_PORT=21000
+
+  # 4. Electrovalvulas
+  electrovalvula-0:
+    image: electrovalvula:1.0
+    command: ["0"]
+    networks:
+      - invernadero-net
+    ports:
+      - "21000:21000"
+    environment:
+      - VALVULA_BASE_PORT=21000
+      - HOSTNAME=electrovalvula-0
+
+  electrovalvula-1:
+    image: electrovalvula:1.0
+    command: ["1"]
+    networks:
+      - invernadero-net
+    ports:
+      - "21001:21001"
+    environment:
+      - VALVULA_BASE_PORT=21000
+      - HOSTNAME=electrovalvula-1
+      
+  electrovalvula-2:
+    image: electrovalvula:1.0
+    command: ["2"]
+    networks:
+      - invernadero-net
+    ports:
+      - "21002:21002"
+    environment:
+      - VALVULA_BASE_PORT=21000
+      - HOSTNAME=electrovalvula-2
+
+  electrovalvula-3:
+    image: electrovalvula:1.0
+    command: ["3"]
+    networks:
+      - invernadero-net
+    ports:
+      - "21003:21003"
+    environment:
+      - VALVULA_BASE_PORT=21000
+      - HOSTNAME=electrovalvula-3
+
+  electrovalvula-4:
+    image: electrovalvula:1.0
+    command: ["4"]
+    networks:
+      - invernadero-net
+    ports:
+      - "21004:21004"
+    environment:
+      - VALVULA_BASE_PORT=21000
+      - HOSTNAME=electrovalvula-4
+
+  electrovalvula-5:
+    image: electrovalvula:1.0
+    command: ["5"]
+    networks:
+      - invernadero-net
+    ports:
+      - "21005:21005"
+    environment:
+      - VALVULA_BASE_PORT=21000
+      - HOSTNAME=electrovalvula-5
+
+  electrovalvula-6:
+    image: electrovalvula:1.0
+    command: ["6"]
+    networks:
+      - invernadero-net
+    ports:
+      - "21006:21006"
+    environment:
+      - VALVULA_BASE_PORT=21000
+      - HOSTNAME=electrovalvula-6
+
+  # 5. Sensores Globales
+  sensor-temperatura:
+    image: temperatura:1.0
+    container_name: sensor-temperatura
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    ports:
+      - "22000:22000"
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+      - PORT=22000
+      - HOSTNAME=sensor-temperatura
+
+  sensor-iluminacion:
+    image: iluminacion:1.0
+    container_name: sensor-iluminacion
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+      - PORT=22000
+      - HOSTNAME=sensor-iluminacion
+      
+  sensor-lluvia:
+    image: lluvia:1.0
+    container_name: sensor-lluvia
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+      - PORT=22000
+      - HOSTNAME=sensor-lluvia
+
+  # 6. Sensores de Humedad por Parcela
+  sensor-humedad-0:
+    image: humedad:1.0
+    command: ["0"]
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+      - PORT=22000
+      - HOSTNAME=sensor-humedad-0
+      
+  sensor-humedad-1:
+    image: humedad:1.0
+    command: ["1"]
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+      - PORT=22000
+      - HOSTNAME=sensor-humedad-1
+      
+  sensor-humedad-2:
+    image: humedad:1.0
+    command: ["2"]
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+      - PORT=22000
+      - HOSTNAME=sensor-humedad-2
+      
+  sensor-humedad-3:
+    image: humedad:1.0
+    command: ["3"]
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+      - PORT=22000
+      - HOSTNAME=sensor-humedad-3
+      
+  sensor-humedad-4:
+    image: humedad:1.0
+    command: ["4"]
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+      - PORT=22000
+      - HOSTNAME=sensor-humedad-4
+
+  # 7. Temporizadores por Parcela
+  temporizador-0:
+    image: temporizador:1.0
+    command: ["0"]
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+
+  temporizador-1:
+    image: temporizador:1.0
+    command: ["1"]
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+
+  temporizador-2:
+    image: temporizador:1.0
+    command: ["2"]
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+
+  temporizador-3:
+    image: temporizador:1.0
+    command: ["3"]
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+
+  temporizador-4:
+    image: temporizador:1.0
+    command: ["4"]
+    networks:
+      - invernadero-net
+    depends_on:
+      - controlador
+    environment:
+      - CONTROLADOR_HOST=controlador
+      - CONTROLADOR_PORT=20000
+
+  # 8. Consola de Depuración
+  consola:
+    image: consola:1.0
+    container_name: consola
+    networks:
+      - invernadero-net
+    stdin_open: true
+    tty: true
+    depends_on:
+      - sensor-temperatura
+      - sensor-iluminacion
+      - sensor-lluvia
+      - sensor-humedad-0
+      - sensor-humedad-1
+      - sensor-humedad-2
+      - sensor-humedad-3
+      - sensor-humedad-4
+    environment:
+      - SENSOR_RMI_PORT=22000
+      - SENSOR_RMI_TEMPERATURA_HOST=sensor-temperatura
+      - SENSOR_RMI_HUMEDAD0_HOST=sensor-humedad-0
+      - SENSOR_RMI_HUMEDAD1_HOST=sensor-humedad-1
+      - SENSOR_RMI_HUMEDAD2_HOST=sensor-humedad-2
+      - SENSOR_RMI_HUMEDAD3_HOST=sensor-humedad-3
+      - SENSOR_RMI_HUMEDAD4_HOST=sensor-humedad-4
+      - SENSOR_RMI_RADIACION_HOST=sensor-iluminacion
+      - SENSOR_RMI_LLUVIA_HOST=sensor-lluvia

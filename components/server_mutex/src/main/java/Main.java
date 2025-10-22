@@ -33,6 +33,10 @@ public class Main {
 
 
         try {
+
+            //Obviar el detector de fallos
+
+            /*
             LocateRegistry.createRegistry(nroPuerto);
             DetectorFallo detector = new DetectorFallo();
             detector.setNombre(nombreServidor);
@@ -44,12 +48,18 @@ public class Main {
             ControlRespuesta tareaControlRespuesta = new ControlRespuesta(detector);
             planificador.schedule(tareaAveriguarEstado, 0, 5000);
             planificador.schedule(tareaControlRespuesta, 0, 8000);
+             */
 
 
             LocateRegistry.createRegistry(nroPuertoExcMutua);
+
+            System.out.println("Puerto RMI creado en: " + nroPuertoExcMutua);
+
             ServerExclusionMutuaRMI serverEM = new ServerExclusionMutuaRMI();
 
             Naming.rebind("rmi://" + hostname + ":" + nroPuertoExcMutua + "/servidorCentralEM", (IServicioExclusionMutua) serverEM);
+
+            System.out.println("Inicado en "+ "rmi://" + hostname + ":" + nroPuertoExcMutua + "/servidorCentralEM");
 
         } catch (RemoteException ex) {
             Logger.getLogger(Main.class.getName()).log(Level.SEVERE, null, ex);

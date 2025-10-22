@@ -35,12 +35,15 @@ public class HiloTemporizado extends Thread {
 
                 // Informar al servidor del estado actual
                 if (temporizadorActual != null && temporizadorActual.estaCorriendo()) {
+                    System.out.println("Temporizador en ejecución. Informando estado OCUPADO al servidor.");
                     pw.println(0); // Estado: OCUPADO
                 } else {
+                    System.out.println("Temporizador inactivo. Informando estado LISTO al servidor.");
                     pw.println(1); // Estado: LISTO
                 }
 
                 // Esperar un comando del servidor (bloqueante)
+                System.out.println("Esperando comando del servidor...");
                 String comandoStr = br.readLine();
                 if (comandoStr == null) {
                     System.out.println("El servidor cerró la conexión.");

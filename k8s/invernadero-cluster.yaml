@@ -3,7 +3,23 @@ kind: Namespace
 metadata:
   name: invernadero
 ---
+#################################################################
 # Servidor Mutex
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-mutex-service
+  namespace: invernadero
+spec:
+  selector:
+    app: server-mutex
+  ports:
+    - name: rmi-exclusion
+      protocol: TCP
+      port: 10000
+      targetPort: 10000
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,8 +38,218 @@ spec:
       containers:
         - name: server-mutex
           image: server_mutex:1.0
+          imagePullPolicy: Always
+          command: ["java", "-jar", "app.jar"]
+          ports:
+            - containerPort: 10000
+          env:
+            - name: EXCLUSION_PORT
+              value: "10000"
 ---
-# Sistema de Fertirrigación
+#################################################################
+# Controlador
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: controlador-service
+  namespace: invernadero
+spec:
+  selector:
+    app: controlador
+  ports:
+    - name: tcp-sensors
+      protocol: TCP
+      port: 20000
+      targetPort: 20000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controlador
+  namespace: invernadero
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: controlador
+  template:
+    metadata:
+      labels:
+        app: controlador
+    spec:
+      containers:
+        - name: controlador
+          image: controlador:1.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 20000
+          env:
+            - name: CONTROLADOR_PORT
+              value: "20000"
+            - name: EXCLUSION_HOST
+              value: "server-mutex-service"
+            - name: EXCLUSION_PORT
+              value: "10000"
+            - name: VALVULA_HOST
+              value: "electrovalvula-%d.electrovalvula-headless-svc"
+            - name: VALVULA_BASE_PORT
+              value: "21000"
+            - name: VALVULA_MAESTRA_HOST
+              value: "electrovalvula-5.electrovalvula-headless-svc"
+            - name: VALVULA_MAESTRA_PORT
+              value: "21005"
+---
+#################################################################
+# Electrovalvulas
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: electrovalvula-headless-svc
+  namespace: invernadero
+spec:
+  clusterIP: None
+  selector:
+    app: electrovalvula
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: electrovalvula
+  namespace: invernadero
+spec:
+  serviceName: "electrovalvula-headless-svc"
+  replicas: 7
+  selector:
+    matchLabels:
+      app: electrovalvula
+  template:
+    metadata:
+      labels:
+        app: electrovalvula
+    spec:
+      containers:
+        - name: electrovalvula
+          image: electrovalvula:1.0
+          imagePullPolicy: Always
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: VALVULA_BASE_PORT
+              value: "21000"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              POD_INDEX=${HOSTNAME##*-}
+              RMI_HOSTNAME="${HOSTNAME}.electrovalvula-headless-svc"
+              java -Djava.rmi.server.hostname=${RMI_HOSTNAME} -jar app.jar $POD_INDEX
+---
+#################################################################
+# Sensores de Humedad
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: sensor-humedad-headless-svc
+  namespace: invernadero
+spec:
+  clusterIP: None
+  selector:
+    app: sensor-humedad
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sensor-humedad
+  namespace: invernadero
+spec:
+  serviceName: "sensor-humedad-headless-svc"
+  replicas: 5
+  selector:
+    matchLabels:
+      app: sensor-humedad
+  template:
+    metadata:
+      labels:
+        app: sensor-humedad
+    spec:
+      containers:
+        - name: sensor-humedad
+          image: humedad:1.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 22000
+          env:
+            - name: CONTROLADOR_HOST
+              value: "controlador-service"
+            - name: CONTROLADOR_PORT
+              value: "20000"
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PORT
+              value: "22000"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              POD_INDEX=${HOSTNAME##*-}
+              RMI_HOSTNAME="${HOSTNAME}.sensor-humedad-headless-svc"
+              java -Djava.rmi.server.hostname=${RMI_HOSTNAME} -jar app.jar $POD_INDEX
+---
+#################################################################
+# Temporizadores
+#################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporizador-headless-svc
+  namespace: invernadero
+spec:
+  clusterIP: None
+  selector:
+    app: temporizador
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: temporizador
+  namespace: invernadero
+spec:
+  serviceName: "temporizador-headless-svc"
+  replicas: 5
+  selector:
+    matchLabels:
+      app: temporizador
+  template:
+    metadata:
+      labels:
+        app: temporizador
+    spec:
+      containers:
+        - name: temporizador
+          image: temporizador:1.0
+          imagePullPolicy: Always
+          env:
+            - name: CONTROLADOR_HOST
+              value: "controlador-service"
+            - name: CONTROLADOR_PORT
+              value: "20000"
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              POD_INDEX=${HOSTNAME##*-}
+              java -jar app.jar $POD_INDEX
+---
+
+#Sistema de Fertirrigacion
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -42,92 +268,107 @@ spec:
       containers:
         - name: sistema-fertirrigacion
           image: sistema_fertirrigacion:1.0
+          imagePullPolicy: Always
+          env:
+            - name: EXCLUSION_HOST
+              value: "server-mutex-service"
+            - name: EXCLUSION_PORT
+              value: "10000"
 ---
-# Electrovalvulas (7 réplicas)
+#Sensor de Iluminacion
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: electrovalvula
-  namespace: invernadero
-spec:
-  replicas: 7
-  selector:
-    matchLabels:
-      app: electrovalvula
-  template:
-    metadata:
-      labels:
-        app: electrovalvula
-    spec:
-      containers:
-        - name: electrovalvula
-          image: electrovalvula:1.0
----
-# Controlador (3 réplicas)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: controlador
-  namespace: invernadero
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: controlador
-  template:
-    metadata:
-      labels:
-        app: controlador
-    spec:
-      containers:
-        - name: controlador
-          image: controlador:1.0
----
-# Sensores Globales (iluminación, lluvia, temperatura)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: sensores-globales
+  name: sensor-iluminacion
   namespace: invernadero
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: sensores-globales
+      app: sensor-iluminacion
   template:
     metadata:
       labels:
-        app: sensores-globales
+        app: sensor-iluminacion
     spec:
       containers:
         - name: sensor-iluminacion
           image: iluminacion:1.0
-        - name: sensor-lluvia
-          image: lluvia:1.0
-        - name: sensor-temperatura
-          image: temperatura:1.0
+          imagePullPolicy: Always
+          command: ["java", "-Djava.rmi.server.hostname=sensor-iluminacion-service", "-jar", "app.jar"]
+          ports:
+            - containerPort: 22000
+          env:
+            - name: CONTROLADOR_HOST
+              value: "controlador-service"
+            - name: CONTROLADOR_PORT
+              value: "20000"
+            - name: PORT
+              value: "22000"
 ---
-# Sensores de Humedad (5 réplicas)
+#Sensor de Lluvia
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sensor-humedad
+  name: sensor-lluvia
   namespace: invernadero
 spec:
-  replicas: 5
+  replicas: 1
   selector:
     matchLabels:
-      app: sensor-humedad
+      app: sensor-lluvia
   template:
     metadata:
       labels:
-        app: sensor-humedad
+        app: sensor-lluvia
     spec:
       containers:
-        - name: sensor-humedad
-          image: humedad:1.0
+        - name: sensor-lluvia
+          image: lluvia:1.0
+          imagePullPolicy: Always
+          command: ["java", "-Djava.rmi.server.hostname=sensor-lluvia-service", "-jar", "app.jar"]
+          ports:
+            - containerPort: 22000
+          env:
+            - name: CONTROLADOR_HOST
+              value: "controlador-service"
+            - name: CONTROLADOR_PORT
+              value: "20000"
+            - name: PORT
+              value: "22000"
 ---
-# Consola (1 réplica)
+#Sensor de Temperatura
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sensor-temperatura
+  namespace: invernadero
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sensor-temperatura
+  template:
+    metadata:
+      labels:
+        app: sensor-temperatura
+    spec:
+      containers:
+        - name: sensor-temperatura
+          image: temperatura:1.0
+          imagePullPolicy: Always
+          command: ["java", "-Djava.rmi.server.hostname=sensor-temperatura-service", "-jar", "app.jar"]
+          ports:
+            - containerPort: 22000
+          env:
+            - name: CONTROLADOR_HOST
+              value: "controlador-service"
+            - name: CONTROLADOR_PORT
+              value: "20000"
+            - name: PORT
+              value: "22000"
+---
+# Consola my beloved
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -146,23 +387,63 @@ spec:
       containers:
         - name: consola
           image: consola:1.0
+          imagePullPolicy: Always
+          stdin: true
+          tty: true
+          env:
+            - name: SENSOR_RMI_PORT
+              value: "22000"
+            - name: SENSOR_RMI_TEMPERATURA_HOST
+              value: "sensor-temperatura-service"
+            - name: SENSOR_RMI_RADIACION_HOST
+              value: "sensor-iluminacion-service"
+            - name: SENSOR_RMI_LLUVIA_HOST
+              value: "sensor-lluvia-service"
+            - name: SENSOR_RMI_HUMEDAD0_HOST
+              value: "sensor-humedad-0.sensor-humedad-headless-svc"
+            - name: SENSOR_RMI_HUMEDAD1_HOST
+              value: "sensor-humedad-1.sensor-humedad-headless-svc"
+            - name: SENSOR_RMI_HUMEDAD2_HOST
+              value: "sensor-humedad-2.sensor-humedad-headless-svc"
+            - name: SENSOR_RMI_HUMEDAD3_HOST
+              value: "sensor-humedad-3.sensor-humedad-headless-svc"
+            - name: SENSOR_RMI_HUMEDAD4_HOST
+              value: "sensor-humedad-4.sensor-humedad-headless-svc"
+
+# Los demas
 ---
-# Temporizadores (5 réplicas)
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Service
 metadata:
-  name: temporizador
+  name: sensor-temperatura-service
   namespace: invernadero
 spec:
-  replicas: 5
   selector:
-    matchLabels:
-      app: temporizador
-  template:
-    metadata:
-      labels:
-        app: temporizador
-    spec:
-      containers:
-        - name: temporizador
-          image: temporizador:1.0
+    app: sensor-temperatura
+  ports:
+    - port: 22000
+      targetPort: 22000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sensor-iluminacion-service
+  namespace: invernadero
+spec:
+  selector:
+    app: sensor-iluminacion
+  ports:
+    - port: 22000
+      targetPort: 22000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sensor-lluvia-service
+  namespace: invernadero
+spec:
+  selector:
+    app: sensor-lluvia
+  ports:
+    - port: 22000
+      targetPort: 22000

@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 
 
 /**
@@ -26,13 +27,17 @@ public class ServerTCP extends Thread {
     public void run() {
         // Crear el ConcurrentHashMap que tiene todos los datos del estado
         ConcurrentHashMap<String, Object> estado = new ConcurrentHashMap<>();
+        estado.put("radiacion", 0.0);
+        estado.put("lluvia", false);
+        estado.put("temperatura", 0.0);
+        Semaphore sem = new Semaphore(0);
 
         try {
             String portEnv = System.getenv("CONTROLADOR_PORT");
             int port = (portEnv != null) ? Integer.parseInt(portEnv) : 20000;
             ServerSocket server = new ServerSocket(port);
             System.out.println("[ServerTCP] Escuchando en el puerto" + port);
-            HiloControlador hiloControlador = new HiloControlador(estado);
+            HiloControlador hiloControlador = new HiloControlador(estado, sem);
 
             Thread controllerThread = new Thread(hiloControlador);
             controllerThread.start();

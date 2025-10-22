@@ -18,7 +18,7 @@ public class HiloReceptorTiempo extends Thread {
 
     private Socket clienteTiempo;
     private final BufferedReader br;
-    private int estadoTemporizador;
+    private int estadoTemporizador = 1; //Iniciar en parado por si el receptor no lo lee
 
     /**
      * Devuelve el valor actual del temporizador en segundos.
