@@ -1,6 +1,5 @@
 package hilos;
 
-
 import rmi.IClienteEM;
 import rmi.IServerRMI;
 import rmi.IServicioExclusionMutua;
@@ -14,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.io.IOException;
+import java.util.concurrent.Semaphore;
 
 /**
  * <p>
@@ -43,6 +43,7 @@ import java.io.IOException;
  */
 public class HiloControlador extends UnicastRemoteObject implements IClienteEM, Runnable {
 
+    private final Semaphore s;
 
     /**
      * Estructura compartida que almacena variables ambientales globales (temperatura, radiación y lluvia).
@@ -74,12 +75,12 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
      * Referencia al servicio remoto de exclusión mutua.
      * Utilizado para solicitar y liberar el acceso a la bomba de agua.
      */
-    private final IServicioExclusionMutua exclusionService;
+    private IServicioExclusionMutua exclusionService;
 
     /**
      * Referencia al servidor remoto que controla la válvula maestra de riego.
      */
-    private final IServerRMI valvulaMaestraParcelas;
+    private IServerRMI valvulaMaestraParcelas;
 
     /**
      * Indica si actualmente el controlador posee el token que da acceso a la bomba de agua.
@@ -96,62 +97,110 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
      * y estableciendo conexiones RMI con los servicios de exclusión mutua y control de válvula.
      *
      * @param estado estructura compartida que mantiene variables globales.
+     * @param s      Semáforo para sincronizar la recepción del token.
      * @throws RemoteException si ocurre un error al exportar el objeto remoto.
      */
-    public HiloControlador(ConcurrentHashMap<String, Object> estado) throws RemoteException {
+    public HiloControlador(ConcurrentHashMap<String, Object> estado, Semaphore s) throws RemoteException {
         super();
         this.estado = estado;
+        this.s = s;
 
+        // Inicializar las parcelas
         for (int i = 0; i < 5; i++) {
             HiloParcela parcela = new HiloParcela(i, estado);
             listaParcelas.add(parcela);
             parcela.start();
         }
 
+        this.valvulaMaestraParcelas = conectarValvulaMaestra();
+        if (this.valvulaMaestraParcelas == null) {
+            throw new RuntimeException("No se pudo establecer la conexión inicial con la Válvula Maestra.");
+        }
+
+        this.exclusionService = conectarServicioExclusion();
+        if (this.exclusionService == null) {
+            throw new RuntimeException("No se pudo establecer la conexión inicial con el servicio de Exclusión Mutua.");
+        }
+    }
+
+    /**
+     * Intenta conectar con el servidor RMI de la Válvula Maestra.
+     * Implementa reintentos con backoff exponencial.
+     *
+     * @return Referencia al servidor RMI o null si falla la conexión.
+     */
+    private IServerRMI conectarValvulaMaestra() {
         int maxRetries = 10;
         long delay = 1000;
-
-        IServicioExclusionMutua tempExclusionService = null;
         IServerRMI tempValvulaMaestraParcelas = null;
+
         for (int i = 0; i < maxRetries; i++) {
             try {
                 String valvulaHost = System.getenv("VALVULA_MAESTRA_HOST");
                 if (valvulaHost == null) valvulaHost = "localhost";
-
                 String valvulaEnv = System.getenv("VALVULA_MAESTRA_PORT");
                 int valvulaPort = (valvulaEnv != null) ? Integer.parseInt(valvulaEnv) : 21005;
 
                 tempValvulaMaestraParcelas = (IServerRMI) Naming.lookup("rmi://" + valvulaHost + ":" + valvulaPort + "/ServerRMI");
-                System.out.println("Controlador conectado a la Válvula Maestra de Parcelas.");
+                System.out.println("Controlador conectado exitosamente a la Válvula Maestra de Parcelas.");
+                return tempValvulaMaestraParcelas; // Éxito
+            } catch (NotBoundException | MalformedURLException | RemoteException e) {
+                System.err.println("Error al conectar con la Válvula Maestra: " + e.getMessage());
+                if (i < maxRetries - 1) {
+                    try {
+                        System.out.printf("Reintentando en %d ms... (Intento %d/%d)%n", delay, i + 2, maxRetries);
+                        Thread.sleep(delay);
+                        delay *= 2; // Backoff exponencial
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+        }
+        System.err.println("Fallo al conectar con la Válvula Maestra después de " + maxRetries + " intentos.");
+        return null; // Fallo
+    }
 
+    /**
+     * Intenta conectar con el servidor RMI de Exclusión Mutua.
+     * Implementa reintentos con backoff exponencial.
+     *
+     * @return Referencia al servicio de Exclusión Mutua o null si falla la conexión.
+     */
+    private IServicioExclusionMutua conectarServicioExclusion() {
+        int maxRetries = 10;
+        long delay = 1000;
+        IServicioExclusionMutua tempExclusionService = null;
+
+        for (int i = 0; i < maxRetries; i++) {
+            try {
                 String exclusionHost = System.getenv("EXCLUSION_HOST");
                 if (exclusionHost == null) exclusionHost = "localhost";
-
                 String portEnv = System.getenv("EXCLUSION_PORT");
                 int port = (portEnv != null) ? Integer.parseInt(portEnv) : 10000;
                 String url = "rmi://" + exclusionHost + ":" + port + "/servidorCentralEM";
 
-                System.out.println("Intento " + (i + 1) + ": Conectandose al servidor mutex en " + url);
+                System.out.println("Intento " + (i + 1) + ": Conectando al servidor de exclusión mutua en " + url);
                 tempExclusionService = (IServicioExclusionMutua) Naming.lookup(url);
-                System.out.println("Controlador conectado al servicio de Exclusión Mutua.");
-                break;
+                System.out.println("Controlador conectado exitosamente al servicio de Exclusión Mutua.");
+                return tempExclusionService; // Éxito
             } catch (NotBoundException | MalformedURLException | RemoteException e) {
-                System.err.println("Error conectadose al servicio de Exclusion Mutua: " + e.getMessage());
+                System.err.println("Error al conectar con el servicio de Exclusión Mutua: " + e.getMessage());
                 if (i < maxRetries - 1) {
                     try {
+                        System.out.printf("Reintentando en %d ms... (Intento %d/%d)%n", delay, i + 2, maxRetries);
                         Thread.sleep(delay);
-                        delay *= 2;
+                        delay *= 2; // Espera exponencial
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                     }
-                } else {
-                    throw new RuntimeException("Could not connect to Exclusion Mutua service after " + maxRetries + " attempts.", e);
                 }
             }
         }
-        this.valvulaMaestraParcelas = tempValvulaMaestraParcelas;
-        this.exclusionService = tempExclusionService;
+        System.err.println("Fallo al conectar con el servicio de Exclusión Mutua después de " + maxRetries + " intentos.");
+        return null; // Fallo
     }
+
 
     /**
      * Asocia un hilo receptor de datos de humedad con una parcela específica.
@@ -188,21 +237,36 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
     public void run() {
         while (true) {
             try {
+                if (exclusionService == null) {
+                    System.err.println("La conexión con el servicio de exclusión se ha perdido. Intentando reconectar...");
+                    exclusionService = conectarServicioExclusion();
+                    if (exclusionService == null) {
+                        Thread.sleep(5000); // Esperar antes del próximo intento
+                        continue;
+                    }
+                }
+                if (valvulaMaestraParcelas == null) {
+                    System.err.println("La conexión con la Válvula Maestra se ha perdido. Intentando reconectar...");
+                    valvulaMaestraParcelas = conectarValvulaMaestra();
+                    if (valvulaMaestraParcelas == null) {
+                        Thread.sleep(5000);
+                        continue;
+                    }
+                }
+
                 boolean demandaActual = algunaParcelaNecesitaAgua();
 
                 if (demandaActual && !tieneAccesoBomba) {
-                    // Solicitar acceso exclusivo al recurso
+                    System.out.println("Pidiendo token de acceso a bomba de agua...");
                     exclusionService.ObtenerRecurso(RECURSO_BOMBA, this);
-                    System.out.println("Token pedido");
+                    this.s.acquire();
                 } else if (!demandaActual && tieneAccesoBomba) {
-                    // Liberar recurso cuando ya no hay demanda
                     valvulaMaestraParcelas.cerrarValvula();
                     exclusionService.DevolverRecurso(RECURSO_BOMBA);
                     tieneAccesoBomba = false;
                     System.out.println("Token devuelto");
                 }
 
-                // Actualizar estado global
                 this.temperatura = (double) this.estado.get("temperatura");
                 this.radiacion = (double) this.estado.get("radiacion");
                 this.lluvia = (boolean) this.estado.get("lluvia");
@@ -211,32 +275,57 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
                 mostrarEstadoGeneral(demandaActual);
 
             } catch (RemoteException e) {
-                System.err.println("Error RMI en HiloControlador: " + e.getMessage());
+                System.err.println("Error RMI en HiloControlador: " + e.getMessage() + ". La conexión se intentará restablecer.");
+                this.exclusionService = null;
+                this.valvulaMaestraParcelas = null;
+                this.tieneAccesoBomba = false;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.err.println("HiloControlador interrumpido");
+                break; // Salir del bucle si se interrumpe
             }
 
             try {
                 Thread.sleep(1000);
             } catch (InterruptedException e) {
-                System.err.println("HiloControlador interrumpido");
                 Thread.currentThread().interrupt();
+                System.err.println("HiloControlador interrumpido durante la espera");
+                break;
             }
         }
     }
 
     /**
-     * Método remoto invocado por el servidor de exclusión mutua cuando se otorga el token.
-     * <p>
-     * Al recibir el token, el controlador abre la válvula maestra para permitir el
-     * riego de las parcelas.
-     * </p>
+     * Método invocado por el servidor de exclusión mutua cuando este cliente obtiene el token.
      *
-     * @throws RemoteException si ocurre un error en la comunicación remota.
+     * @throws RemoteException si ocurre un error durante la comunicación RMI.
      */
     @Override
     public void RecibirToken() throws RemoteException {
-        System.out.println("Token recibido para recurso " + RECURSO_BOMBA);
+        System.out.println("Token recibido para el recurso " + RECURSO_BOMBA);
         this.tieneAccesoBomba = true;
-        valvulaMaestraParcelas.abrirValvula();
+        try {
+            if (valvulaMaestraParcelas != null) {
+                valvulaMaestraParcelas.abrirValvula();
+            } else {
+                System.err.println("Token recibido pero la Válvula Maestra no está conectada");
+            }
+        } catch (RemoteException e) {
+            System.err.println("Fallo al abrir la Válvula Maestra después de recibir el token: " + e.getMessage());
+            this.valvulaMaestraParcelas = null; // Invalidar conexión
+        }
+        this.s.release();
+    }
+
+    /**
+     * Devuelve el nombre del cliente remoto.
+     *
+     * @return El nombre del cliente.
+     * @throws RemoteException si ocurre un error durante la comunicación RMI.
+     */
+    @Override
+    public String getNombreCliente() throws RemoteException {
+        return "Controlador de Riego";
     }
 
     /**
@@ -256,7 +345,7 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
     /**
      * Muestra en consola el estado actual de todas las parcelas en formato tabular.
      */
-    private void mostrarEstadoParcelas() throws RemoteException {
+    private void mostrarEstadoParcelas() {
         System.out.println("\n========== ESTADO DE PARCELAS ==========");
         System.out.printf("%-8s | %-12s | %-10s | %-15s | %-12s%n",
                 "Parcela", "Humedad (%)", "INR", "Electrovalvula", "Temporizador");
@@ -266,7 +355,15 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
             HiloParcela parcela = listaParcelas.get(i);
             double humedad = parcela.getHumedad();
             double inr = parcela.getInr();
-            boolean estaAbierta = parcela.getElectrovalvula().estaAbierta();
+            boolean estaAbierta = false; // Por defecto cerrada si no hay conexión
+            try {
+                // Esta llamada puede fallar si la electroválvula está desconectada
+                if (parcela.getElectrovalvula() != null) {
+                    estaAbierta = parcela.getElectrovalvula().estaAbierta();
+                }
+            } catch (RemoteException e) {
+                System.err.println("No se pudo obtener el estado de la electroválvula " + i + ". Asumiendo cerrada.");
+            }
             boolean temporizadorActivo = parcela.getEstadoTemporizador() == 0;
 
             System.out.printf("%-8d | %-12.2f | %-10.3f | %-15s | %-12s%n",
@@ -279,9 +376,9 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
     }
 
     /**
-     * Muestra el estado general de las variables ambientales y la demanda de agua.
+     * Muestra el estado general del sistema, incluyendo variables ambientales y demanda de agua.
      *
-     * @param demandaActual valor booleano que indica si existe demanda en el ciclo actual.
+     * @param demandaActual Indica si actualmente hay demanda de agua.
      */
     private void mostrarEstadoGeneral(boolean demandaActual) {
         System.out.println("\n========== ESTADO GENERAL ==========");

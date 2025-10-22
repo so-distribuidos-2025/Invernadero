@@ -39,6 +39,11 @@ public class Main extends UnicastRemoteObject implements IClienteEM {
         this.tieneAccesoBomba = true;
     }
 
+    @Override
+    public String getNombreCliente(){
+        return "Sistema de Fertirrigacion";
+    }
+
     /**
      * Bucle principal que solicita el recurso, espera a recibirlo, lo utiliza y lo libera.
      */
