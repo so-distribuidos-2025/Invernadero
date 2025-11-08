@@ -1,10 +1,5 @@
 FROM c4lvarez7/java-cont-sod2025
 
-ENV CONTROLADOR_HOST="localhost"
-ENV CONTROLADOR_PORT="20000"
-ENV HOSTNAME="localhost"
-ENV PORT="22000"
-
 COPY sensorHumedad.jar app.jar
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

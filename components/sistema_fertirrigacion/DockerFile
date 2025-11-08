@@ -1,8 +1,5 @@
 FROM c4lvarez7/java-cont-sod2025
 
-ENV EXCLUSION_HOST="localhost"
-ENV EXCLUSION_PORT="10000"
-
 COPY sistemaFertirrigacion.jar app.jar
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

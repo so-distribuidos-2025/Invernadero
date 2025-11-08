@@ -1,13 +1,5 @@
 FROM c4lvarez7/java-cont-sod2025
 
-ENV CONTROLADOR_PORT="20000"
-ENV EXCLUSION_HOST="localhost"
-ENV EXCLUSION_PORT="10000"
-ENV VALVULA_MAESTRA_HOST="localhost"
-ENV VALVULA_MAESTRA_PORT="21005"
-ENV VALVULA_HOST="localhost"
-ENV VALVULA_PORT="21000"
-
 COPY controlador.jar app.jar
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

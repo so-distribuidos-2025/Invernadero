@@ -25,7 +25,8 @@ import java.util.concurrent.Semaphore;
 public class ServerTCP extends Thread {
     @Override
     public void run() {
-        // Crear el ConcurrentHashMap que tiene todos los datos del estado
+
+        // ConcurrentHashMap que tiene todos los datos del estado
         ConcurrentHashMap<String, Object> estado = new ConcurrentHashMap<>();
         estado.put("radiacion", 0.0);
         estado.put("lluvia", false);
