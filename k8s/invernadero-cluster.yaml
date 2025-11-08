@@ -45,6 +45,10 @@ spec:
           env:
             - name: EXCLUSION_PORT
               value: "10000"
+            - name: HOSTNAME
+              value: "server-mutex-service"
+            - name: DETECTOR_FALLOS_PORT
+              value: "9000"
 ---
 #################################################################
 # Controlador
@@ -99,6 +103,14 @@ spec:
               value: "electrovalvula-5.electrovalvula-headless-svc"
             - name: VALVULA_MAESTRA_PORT
               value: "21005"
+          livenessProbe:
+            tcpSocket:
+              port: 20000
+            initialDelaySeconds: 30 # Espera 30 segundos antes de empezar a chequear
+            periodSeconds: 10     # Chequea cada 10 segundos
+            timeoutSeconds: 5     # El probe falla si no hay respuesta en 5 segundos
+            failureThreshold: 3   # Si falla 3 veces consecutivas, el contenedor se reinicia
+
 ---
 #################################################################
 # Electrovalvulas
