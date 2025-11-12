@@ -5,7 +5,11 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
-
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.PreparedStatement;
+import java.util.Date;
 /**
  * Gestiona la conexión inicial de un dispositivo con el servidor y lo deriva
  * al hilo receptor correspondiente.
@@ -32,6 +36,8 @@ public class HiloConexionTCP extends Thread {
 
     String tipoDispositivo = "";
 
+    Connection conn = null;
+
     /**
      * Mapa de estado global, compartido entre todos los hilos del sistema.
      */
@@ -49,10 +55,11 @@ public class HiloConexionTCP extends Thread {
      * @param hiloControlador la instancia del hilo de control principal, necesaria
      *                        para registrar sensores específicos de parcela.
      */
-    public HiloConexionTCP(Socket s, ConcurrentHashMap<String, Object> estado, HiloControlador hiloControlador) {
+    public HiloConexionTCP(Socket s, ConcurrentHashMap<String, Object> estado, HiloControlador hiloControlador, Connection conn) {
         this.s = s;
         this.estado = estado;
         this.hiloControlador = hiloControlador;
+        this.conn = conn;
     }
 
     /**

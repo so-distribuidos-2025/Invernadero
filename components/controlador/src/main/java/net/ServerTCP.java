@@ -7,7 +7,11 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
-
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.PreparedStatement;
+import java.util.Date;
 
 /**
  * Hilo del servidor TCP, espera las conexiones entrantes y genera los hilos para las conexiones
@@ -31,20 +35,32 @@ public class ServerTCP extends Thread {
         estado.put("lluvia", false);
         estado.put("temperatura", 0.0);
         Semaphore sem = new Semaphore(0);
+        Connection conn = null;
+
+        try {
+            conn = DriverManager.getConnection("jdbc:mysql://bdserver.mcssi.com.ar/sodlogs?" + "user=admin&password=sod");
+            System.out.println("Database connection successful: " + conn);
+            System.out.println("Schema: " + conn.getSchema());
+        } catch (SQLException ex) {
+            // handle any errors
+            System.out.println("SQLException: " + ex.getMessage());
+            System.out.println("SQLState: " + ex.getSQLState());
+            System.out.println("VendorError: " + ex.getErrorCode());
+        }
 
         try {
             String portEnv = System.getenv("CONTROLADOR_PORT");
             int port = (portEnv != null) ? Integer.parseInt(portEnv) : 20000;
             ServerSocket server = new ServerSocket(port);
             System.out.println("[ServerTCP] Escuchando en el puerto" + port);
-            HiloControlador hiloControlador = new HiloControlador(estado, sem);
+            HiloControlador hiloControlador = new HiloControlador(estado, sem, conn);
 
             Thread controllerThread = new Thread(hiloControlador);
             controllerThread.start();
 
             while (true) {
                 Socket s = server.accept();
-                HiloConexionTCP handler = new HiloConexionTCP(s, estado, hiloControlador);
+                HiloConexionTCP handler = new HiloConexionTCP(s, estado, hiloControlador, conn);
                 handler.start();
             }
         } catch (IOException e) {

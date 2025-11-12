@@ -14,6 +14,11 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.io.IOException;
 import java.util.concurrent.Semaphore;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.PreparedStatement;
+import java.util.Date;
 
 /**
  * <p>
@@ -45,6 +50,8 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
 
     private final Semaphore s;
 
+    private Connection conn;
+
     /**
      * Estructura compartida que almacena variables ambientales globales (temperatura, radiación y lluvia).
      */
@@ -70,6 +77,8 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
      * Indica si está lloviendo en el entorno monitoreado.
      */
     private boolean lluvia;
+    
+    private int bdCounter = 10;
 
     /**
      * Referencia al servicio remoto de exclusión mutua.
@@ -100,10 +109,11 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
      * @param s      Semáforo para sincronizar la recepción del token.
      * @throws RemoteException si ocurre un error al exportar el objeto remoto.
      */
-    public HiloControlador(ConcurrentHashMap<String, Object> estado, Semaphore s) throws RemoteException {
+    public HiloControlador(ConcurrentHashMap<String, Object> estado, Semaphore s, Connection conn) throws RemoteException {
         super();
         this.estado = estado;
         this.s = s;
+        this.conn = conn;
 
         // Inicializar las parcelas
         for (int i = 0; i < 5; i++) {
@@ -223,6 +233,9 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
         listaParcelas.get(id).setHiloTiempo(hr);
     }
 
+
+
+
     /**
      * Método principal de ejecución del hilo controlador.
      * <p>
@@ -237,6 +250,12 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
     public void run() {
         while (true) {
             try {
+                bdCounter -= 1;
+
+                if (bdCounter == 0){
+                    escribirBd();
+                    bdCounter = 10;
+                }
                 if (exclusionService == null) {
                     System.err.println("La conexión con el servicio de exclusión se ha perdido. Intentando reconectar...");
                     exclusionService = conectarServicioExclusion();
@@ -284,6 +303,8 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
                 System.err.println("HiloControlador interrumpido");
                 break; // Salir del bucle si se interrumpe
             }
+            
+
 
             try {
                 Thread.sleep(1000);
@@ -292,6 +313,30 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
                 System.err.println("HiloControlador interrumpido durante la espera");
                 break;
             }
+        }
+    }
+
+    private void escribirBd() {
+        String sql = "INSERT INTO log (info) VALUES (?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            // Create a descriptive log message with a timestamp
+            String logMessage = new Date() + " Estado:\n" + this.estado.toString();
+
+            // Set the value for the first placeholder (?)
+            pstmt.setString(1, logMessage);
+
+            // Execute the insert statement
+            int rowsAffected = pstmt.executeUpdate();
+
+            if (rowsAffected > 0) {
+                System.out.println("Successfully wrote test entry to the log table.");
+            } else {
+                System.err.println("Warning: Test log entry was not written to the database.");
+            }
+
+        } catch (SQLException e) {
+            System.err.println("Error writing to log table: " + e.getMessage());
         }
     }
 
