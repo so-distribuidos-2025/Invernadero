@@ -252,7 +252,7 @@ public class HiloControlador extends UnicastRemoteObject implements IClienteEM, 
             try {
                 bdCounter -= 1;
 
-                if (bdCounter == 0){
+                if (bdCounter == 0 && this.conn != null){
                     escribirBd();
                     bdCounter = 10;
                 }
