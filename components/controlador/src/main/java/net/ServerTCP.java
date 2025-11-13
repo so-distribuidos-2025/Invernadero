@@ -38,7 +38,8 @@ public class ServerTCP extends Thread {
         Connection conn = null;
 
         try {
-            conn = DriverManager.getConnection("jdbc:mysql://bdserver.mcssi.com.ar/sodlogs?" + "user=admin&password=sod");
+            String bdHost = System.getenv("DATABASE_HOST");
+            conn = DriverManager.getConnection("jdbc:mysql://"+bdHost+"?" + "user=admin&password=sod");
             System.out.println("Database connection successful: " + conn);
             System.out.println("Schema: " + conn.getSchema());
         } catch (SQLException ex) {

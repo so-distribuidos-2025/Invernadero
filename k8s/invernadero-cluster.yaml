@@ -85,6 +85,8 @@ spec:
           ports:
             - containerPort: 20000
           env:
+            - name: DATABASE_HOST
+              value: "bdserver.mcssi.com.ar/sodlogs"
             - name: CONTROLADOR_PORT
               value: "20000"
             - name: EXCLUSION_HOST
